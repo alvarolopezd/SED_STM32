@@ -23,6 +23,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+#include "i2c-lcd.h"
+#include "stdio.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -32,6 +35,14 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+// PUERTOS DS18B20 - B
+#define DS18B20_PORT GPIOB
+#define DS18B20_PIN GPIO_PIN_11 // Datos  DS18B20 - Sensor de temperatura
+
+// PUERTO DATOS DHT11 - A -- INACTIVO
+//#define DHT11_PORT GPIOA
+//#define DHT11_PIN GPIO_PIN_14     // Datos DHT11 - Sensor de temperatura y humedad
 
 // PUERTO LEDS - E
 #define PORT_LED GPIOE
@@ -50,6 +61,9 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+I2C_HandleTypeDef hi2c1;
+
+TIM_HandleTypeDef htim6;
 
 /* USER CODE BEGIN PV */
 
@@ -58,6 +72,8 @@
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_I2C1_Init(void);
+static void MX_TIM6_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -65,9 +81,207 @@ static void MX_GPIO_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-//MODE 0 AUTOMATICO (PREDETERMIANDO)
-//MODE 1 MANUAL
-volatile int mode=0;
+/****************** DELAY CON TIM6 Y CLOCK INTERNO ******************/
+
+void delay (uint16_t time)
+{
+	/* change your code here for the delay in microseconds */
+	__HAL_TIM_SET_COUNTER(&htim6, 0);
+	while ((__HAL_TIM_GET_COUNTER(&htim6))<time);
+}
+
+/********************** SET PIN (INPUT Y OUTPUT)************************/
+
+void Set_Pin_Output (GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin)
+{
+	GPIO_InitTypeDef GPIO_InitStruct = {0};
+	GPIO_InitStruct.Pin = GPIO_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOx, &GPIO_InitStruct);
+}
+
+void Set_Pin_Input (GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin)
+{
+	GPIO_InitTypeDef GPIO_InitStruct = {0};
+	GPIO_InitStruct.Pin = GPIO_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	HAL_GPIO_Init(GPIOx, &GPIO_InitStruct);
+}
+
+/******************** FUNCIONES DISPLAY LCD ********************/
+
+void Display_ModoAutom ()
+{
+	char str[20] = {0};
+	lcd_put_cur(0, 2);
+
+	sprintf (str, " MODO AUTOM. ");
+	lcd_send_string(str);
+}
+
+void Display_ModoManual ()
+{
+	char str[20] = {0};
+	lcd_put_cur(0, 2);
+
+	sprintf (str, " MODO MANUAL ");
+	lcd_send_string(str);
+}
+
+void Display_Temp (float Temp)
+{
+	char str[20] = {0};
+	lcd_put_cur(1, 1);
+
+	sprintf (str, "TEMP:- %.2f ", Temp);
+	lcd_send_string(str);
+	lcd_send_data('C');
+}
+
+/*void Display_Rh (float Rh)
+{
+	char str[20] = {0};
+	lcd_put_cur(1, 0);
+
+	sprintf (str, "RH:- %.2f ", Rh);
+	lcd_send_string(str);
+	lcd_send_data('%');
+}*/
+
+/************************ FUNCIONES DS18B20 *******************************/
+
+uint8_t DS18B20_Start (void)
+{
+	uint8_t Response = 0;
+	Set_Pin_Output(DS18B20_PORT, DS18B20_PIN);   // set the pin as output
+	HAL_GPIO_WritePin (DS18B20_PORT, DS18B20_PIN, 0);  // pull the pin low
+	delay (480);   // delay according to datasheet
+
+	Set_Pin_Input(DS18B20_PORT, DS18B20_PIN);    // set the pin as input
+	delay (80);    // delay according to datasheet
+
+	if (!(HAL_GPIO_ReadPin (DS18B20_PORT, DS18B20_PIN))) Response = 1;    // if the pin is low i.e the presence pulse is detected
+	else Response = -1;
+
+	delay (400); // 480 us delay totally.
+
+	return Response;
+}
+
+void DS18B20_Write (uint8_t data)
+{
+	Set_Pin_Output(DS18B20_PORT, DS18B20_PIN);  // set as output
+
+	for (int i=0; i<8; i++)
+	{
+
+		if ((data & (1<<i))!=0)  // if the bit is high
+		{
+			// write 1
+
+			Set_Pin_Output(DS18B20_PORT, DS18B20_PIN);  // set as output
+			HAL_GPIO_WritePin (DS18B20_PORT, DS18B20_PIN, 0);  // pull the pin LOW
+			delay (1);  // wait for 1 us
+
+			Set_Pin_Input(DS18B20_PORT, DS18B20_PIN);  // set as input
+			delay (50);  // wait for 60 us
+		}
+
+		else  // if the bit is low
+		{
+			// write 0
+
+			Set_Pin_Output(DS18B20_PORT, DS18B20_PIN);
+			HAL_GPIO_WritePin (DS18B20_PORT, DS18B20_PIN, 0);  // pull the pin LOW
+			delay (50);  // wait for 60 us
+
+			Set_Pin_Input(DS18B20_PORT, DS18B20_PIN);
+		}
+	}
+}
+
+uint8_t DS18B20_Read (void)
+{
+	uint8_t value=0;
+
+	Set_Pin_Input(DS18B20_PORT, DS18B20_PIN);
+
+	for (int i=0;i<8;i++)
+	{
+		Set_Pin_Output(DS18B20_PORT, DS18B20_PIN);   // set as output
+
+		HAL_GPIO_WritePin (DS18B20_PORT, DS18B20_PIN, 0);  // pull the data pin LOW
+		delay (1);  // wait for > 1us
+
+		Set_Pin_Input(DS18B20_PORT, DS18B20_PIN);  // set as input
+		if (HAL_GPIO_ReadPin (DS18B20_PORT, DS18B20_PIN))  // if the pin is HIGH
+		{
+			value |= 1<<i;  // read = 1
+		}
+		delay (50);  // wait for 60 us
+	}
+	return value;
+}
+
+
+/*********************** FUNCIONES DHT11 ************************/
+
+/*void DHT11_Start (void)
+{
+	Set_Pin_Output (DHT11_PORT, DHT11_PIN);  // set the pin as output
+	HAL_GPIO_WritePin (DHT11_PORT, DHT11_PIN, 0);   // pull the pin low
+	delay(18000);   // wait for 18ms
+    HAL_GPIO_WritePin (DHT11_PORT, DHT11_PIN, 1);   // pull the pin high
+	delay(20);   // wait for 20us
+	Set_Pin_Input(DHT11_PORT, DHT11_PIN);    // set as input
+}
+
+uint8_t DHT11_Check_Response (void)
+{
+	uint8_t Response = 0;
+	delay(40);
+	if (!(HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)))
+	{
+		delay(80);
+		if ((HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN))) Response = 1;
+		else Response = -1; // 255
+	}
+	while ((HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)));   // wait for the pin to go low
+
+	return Response;
+}
+
+uint8_t DHT11_Read (void)
+{
+	uint8_t i,j;
+	for (j=0;j<8;j++)
+	{
+		while (!(HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)));   // wait for the pin to go high
+		delay(40);   // wait for 40 us
+		if (!(HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)))   // if the pin is low
+		{
+			i&= ~(1<<(7-j));   // write 0
+		}
+		else i|= (1<<(7-j));  // if the pin is high, write 1
+		while ((HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)));  // wait for the pin to go low
+	}
+	return i;
+}*/
+
+/************** VARIABLES MODOS **************/
+// MODE 0 AUTOMATICO (PREDETERMIANDO O INICIAL)
+// MODE 1 MANUAL
+volatile int modo=0;
+
+/**************** VARIABLES DHT11 Y DS18B20 ************/
+uint8_t Rh_byte1, Rh_byte2, Temp_byte1, Temp_byte2;
+uint16_t SUM, RH, TEMP;
+
+float Temperature = 0;
+float Humidity = 0;
+uint8_t Presence = 0;
 
 /* USER CODE END 0 */
 
@@ -99,7 +313,17 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_I2C1_Init();
+  MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
+
+  HAL_TIM_Base_Start(&htim6);
+
+  // INICIO DE LCD
+   lcd_init();
+   lcd_send_string("INICIANDO>>>>");
+   HAL_Delay(2000);
+   lcd_clear ();
 
   /* USER CODE END 2 */
 
@@ -111,15 +335,68 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-	  if(mode==0) // MODO AUTOMATICO
+	  if(modo==0) // MODO AUTOMATICO
 	  {
 		  HAL_GPIO_WritePin(PORT_LED,LED_AUTOM,1); // Enciendo led autom
 		  HAL_GPIO_WritePin(PORT_LED,LED_MANUAL,0);
+
+
+		  /********* LCD ********/
+		  Display_ModoAutom();
+		  Display_Temp(Temperature);
+		  //Display_Rh(Humidity);
+
+
+		  /********************** DS18B20 ***********************/
+
+		  Presence = DS18B20_Start ();
+		  HAL_Delay (1);
+		  DS18B20_Write (0xCC);  // skip ROM
+		  DS18B20_Write (0x44);  // convert t
+		  HAL_Delay (800);
+
+		  Presence = DS18B20_Start ();
+		  HAL_Delay(1);
+		  DS18B20_Write (0xCC);  // skip ROM
+		  DS18B20_Write (0xBE);  // Read Scratch-pad
+
+		  Temp_byte1 = DS18B20_Read();
+		  Temp_byte2 = DS18B20_Read();
+		  TEMP = (Temp_byte2<<8)|Temp_byte1;
+		  Temperature = (float)TEMP/16;
+
+		  lcd_clear ();
+
+		  /********************** DHT11 *********************/
+		  /*DHT11_Start();
+		  Presence = DHT11_Check_Response();
+		  Rh_byte1 = DHT11_Read ();
+		  Rh_byte2 = DHT11_Read ();
+		  Temp_byte1 = DHT11_Read ();
+		  Temp_byte2 = DHT11_Read ();
+		  SUM = DHT11_Read();
+
+		  TEMP = Temp_byte1;
+		  RH = Rh_byte1;
+
+		  Temperature = (float) TEMP;
+		  Humidity = (float) RH;*/
+
+
+		  //HAL_Delay(1000); //NO ES NECESARIO
+
 	  }
-	  else if(mode==1)
+	  else if(modo==1)
 	  {
 		  HAL_GPIO_WritePin(PORT_LED,LED_MANUAL,1); // Enciendo led manual
 		  HAL_GPIO_WritePin(PORT_LED,LED_AUTOM,0);
+
+		  // Imprimir por lcd modo 1
+		  Display_ModoManual();
+
+		  HAL_Delay(1000); //NO ES NECESARIO. Se pone incialmente para visualizar el texto por la lcd
+
+		  lcd_clear ();
 	  }
   }
 
@@ -142,10 +419,14 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM = 4;
+  RCC_OscInitStruct.PLL.PLLN = 50;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+  RCC_OscInitStruct.PLL.PLLQ = 4;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -154,15 +435,87 @@ void SystemClock_Config(void)
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 100000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
+}
+
+/**
+  * @brief TIM6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM6_Init(void)
+{
+
+  /* USER CODE BEGIN TIM6_Init 0 */
+
+  /* USER CODE END TIM6_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM6_Init 1 */
+
+  /* USER CODE END TIM6_Init 1 */
+  htim6.Instance = TIM6;
+  htim6.Init.Prescaler = 50-1;
+  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim6.Init.Period = 0xffff-1;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM6_Init 2 */
+
+  /* USER CODE END TIM6_Init 2 */
+
 }
 
 /**
@@ -176,10 +529,19 @@ static void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOE_CLK_ENABLE();
+  __HAL_RCC_GPIOH_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOE, GPIO_PIN_2|GPIO_PIN_4, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_11, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(DATA_DHT11_GPIO_Port, DATA_DHT11_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pins : PE2 PE4 */
   GPIO_InitStruct.Pin = GPIO_PIN_2|GPIO_PIN_4;
@@ -187,6 +549,20 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PB11 */
+  GPIO_InitStruct.Pin = GPIO_PIN_11;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : DATA_DHT11_Pin */
+  GPIO_InitStruct.Pin = DATA_DHT11_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(DATA_DHT11_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PD1 */
   GPIO_InitStruct.Pin = GPIO_PIN_1;
@@ -206,10 +582,14 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 	  if(GPIO_Pin==GPIO_PIN_1)
 	  	{
-		  if(HAL_GPIO_ReadPin(PORT_PUSH,PUSH)&&(mode==0)) 		// Si estoy en modo automatico
-			  mode=1; 											// Cambio a modo manual
-		  else if(HAL_GPIO_ReadPin(PORT_PUSH,PUSH)&&(mode==1)) 	// Si estoy en modo manual
-			  mode=0; 											// Cambio a modo automatico
+		  if(HAL_GPIO_ReadPin(PORT_PUSH,PUSH)&&(modo==0)) 		// Si estoy en modo automatico
+		  {
+			  modo=1; 											// Cambio a modo manual
+		  }
+		  else if(HAL_GPIO_ReadPin(PORT_PUSH,PUSH)&&(modo==1)) 	// Si estoy en modo manual
+		  {
+			  modo=0; 											// Cambio a modo automatico
+		  }
 	  	}
 }
 

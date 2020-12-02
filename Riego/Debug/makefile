@@ -55,7 +55,7 @@ main-build: Riego.elf secondary-outputs
 
 # Tool invocations
 Riego.elf: $(OBJS) $(USER_OBJS) C:\Users\Alvaro\STM32CubeIDE\workspace_1.5.0\SED_STM32\Riego\STM32F407VGTX_FLASH.ld
-	arm-none-eabi-gcc -o "Riego.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Alvaro\STM32CubeIDE\workspace_1.5.0\SED_STM32\Riego\STM32F407VGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Riego.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+	arm-none-eabi-gcc -o "Riego.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Alvaro\STM32CubeIDE\workspace_1.5.0\SED_STM32\Riego\STM32F407VGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Riego.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
