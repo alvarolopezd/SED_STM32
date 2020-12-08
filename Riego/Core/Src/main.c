@@ -44,6 +44,12 @@
 //#define DHT11_PORT GPIOA
 //#define DHT11_PIN GPIO_PIN_14     // Datos DHT11 - Sensor de temperatura y humedad
 
+//MOTOR
+#define MOTOR_PORT GPIOC
+#define INI1_PIN GPIO_PIN_7
+#define INI2_PIN GPIO_PIN_9
+
+
 // PUERTO LEDS - E
 #define PORT_LED GPIOE
 #define LED_MANUAL GPIO_PIN_4     // Led indicador modo manual
@@ -64,6 +70,7 @@
 I2C_HandleTypeDef hi2c1;
 
 TIM_HandleTypeDef htim6;
+TIM_HandleTypeDef htim9;
 
 /* USER CODE BEGIN PV */
 
@@ -74,6 +81,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_TIM6_Init(void);
+static void MX_TIM9_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -135,7 +143,7 @@ void Display_Temp (float Temp)
 	char str[20] = {0};
 	lcd_put_cur(1, 1);
 
-	sprintf (str, "TEMP:- %.2f ", Temp);
+	sprintf (str, "TEMP: %.2f ", Temp);
 	lcd_send_string(str);
 	lcd_send_data('C');
 }
@@ -270,6 +278,24 @@ uint8_t DHT11_Read (void)
 	return i;
 }*/
 
+
+/*********************** FUNCIONES DE MOTOR ****************************/
+void avanceMotor(int s)
+{
+	//TIM9->CCR1=s;
+	__HAL_TIM_SET_COMPARE(&htim9, TIM_CHANNEL_2, s);
+	HAL_GPIO_WritePin(MOTOR_PORT, INI2_PIN,GPIO_PIN_SET);
+	HAL_GPIO_WritePin(MOTOR_PORT, INI1_PIN,GPIO_PIN_RESET);
+}
+
+void pareMotor()
+{
+	//TIM9->CCR1=s;
+	__HAL_TIM_SET_COMPARE(&htim9, TIM_CHANNEL_2, 0);
+	HAL_GPIO_WritePin(MOTOR_PORT, INI2_PIN,GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(MOTOR_PORT, INI1_PIN,GPIO_PIN_RESET);
+}
+
 /************** VARIABLES MODOS **************/
 // MODE 0 AUTOMATICO (PREDETERMIANDO O INICIAL)
 // MODE 1 MANUAL
@@ -315,8 +341,14 @@ int main(void)
   MX_GPIO_Init();
   MX_I2C1_Init();
   MX_TIM6_Init();
+  MX_TIM9_Init();
   /* USER CODE BEGIN 2 */
 
+  // PWM MOTOR
+  HAL_TIM_PWM_Start(&htim9, TIM_CHANNEL_2);
+
+
+  // RELOJ INTERNO PARA DELAY
   HAL_TIM_Base_Start(&htim6);
 
   // INICIO DE LCD
@@ -385,6 +417,14 @@ int main(void)
 
 		  //HAL_Delay(1000); //NO ES NECESARIO
 
+		  // PWM MOTOR
+
+		  //__HAL_TIM_SET_COMPARE(&htim9, TIM_CHANNEL_2, 100);
+
+		  avanceMotor(100);
+		  //HAL_Delay(1);
+
+
 	  }
 	  else if(modo==1)
 	  {
@@ -397,6 +437,11 @@ int main(void)
 		  HAL_Delay(1000); //NO ES NECESARIO. Se pone incialmente para visualizar el texto por la lcd
 
 		  lcd_clear ();
+
+		  //PWM MOTOR
+		  //pareMotor();
+		  avanceMotor(50);
+		  //__HAL_TIM_SET_COMPARE(&htim9, TIM_CHANNEL_2, 0);
 	  }
   }
 
@@ -519,6 +564,48 @@ static void MX_TIM6_Init(void)
 }
 
 /**
+  * @brief TIM9 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM9_Init(void)
+{
+
+  /* USER CODE BEGIN TIM9_Init 0 */
+
+  /* USER CODE END TIM9_Init 0 */
+
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM9_Init 1 */
+
+  /* USER CODE END TIM9_Init 1 */
+  htim9.Instance = TIM9;
+  htim9.Init.Prescaler = 500-1;
+  htim9.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim9.Init.Period = 2000-1;
+  htim9.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim9.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_PWM_Init(&htim9) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim9, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM9_Init 2 */
+
+  /* USER CODE END TIM9_Init 2 */
+  HAL_TIM_MspPostInit(&htim9);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -531,31 +618,42 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_2|GPIO_PIN_4, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOE, LED_AUTOM_Pin|LED_MANUAL_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_11, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(DATA_DS18B20_GPIO_Port, DATA_DS18B20_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, MOTOR_INI1_Pin|MOTOR_INI2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(DATA_DHT11_GPIO_Port, DATA_DHT11_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : PE2 PE4 */
-  GPIO_InitStruct.Pin = GPIO_PIN_2|GPIO_PIN_4;
+  /*Configure GPIO pins : LED_AUTOM_Pin LED_MANUAL_Pin */
+  GPIO_InitStruct.Pin = LED_AUTOM_Pin|LED_MANUAL_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PB11 */
-  GPIO_InitStruct.Pin = GPIO_PIN_11;
+  /*Configure GPIO pin : DATA_DS18B20_Pin */
+  GPIO_InitStruct.Pin = DATA_DS18B20_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  HAL_GPIO_Init(DATA_DS18B20_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : MOTOR_INI1_Pin MOTOR_INI2_Pin */
+  GPIO_InitStruct.Pin = MOTOR_INI1_Pin|MOTOR_INI2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pin : DATA_DHT11_Pin */
   GPIO_InitStruct.Pin = DATA_DHT11_Pin;
@@ -564,11 +662,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(DATA_DHT11_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PD1 */
-  GPIO_InitStruct.Pin = GPIO_PIN_1;
+  /*Configure GPIO pin : PULSADOR_MODE_Pin */
+  GPIO_InitStruct.Pin = PULSADOR_MODE_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+  HAL_GPIO_Init(PULSADOR_MODE_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI1_IRQn, 0, 0);
