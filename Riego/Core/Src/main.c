@@ -152,7 +152,6 @@ void Display_Temp (float Temp)
 {
 	char str[20] = {0};
 	lcd_put_cur(1, 0);
-
 	sprintf (str, "RH:- %.2f ", Rh);
 	lcd_send_string(str);
 	lcd_send_data('%');
@@ -245,7 +244,6 @@ uint8_t DS18B20_Read (void)
 	delay(20);   // wait for 20us
 	Set_Pin_Input(DHT11_PORT, DHT11_PIN);    // set as input
 }
-
 uint8_t DHT11_Check_Response (void)
 {
 	uint8_t Response = 0;
@@ -257,10 +255,8 @@ uint8_t DHT11_Check_Response (void)
 		else Response = -1; // 255
 	}
 	while ((HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)));   // wait for the pin to go low
-
 	return Response;
 }
-
 uint8_t DHT11_Read (void)
 {
 	uint8_t i,j;
@@ -407,10 +403,8 @@ int main(void)
 		  Temp_byte1 = DHT11_Read ();
 		  Temp_byte2 = DHT11_Read ();
 		  SUM = DHT11_Read();
-
 		  TEMP = Temp_byte1;
 		  RH = Rh_byte1;
-
 		  Temperature = (float) TEMP;
 		  Humidity = (float) RH;*/
 
@@ -421,7 +415,7 @@ int main(void)
 
 		  //__HAL_TIM_SET_COMPARE(&htim9, TIM_CHANNEL_2, 100);
 
-		  avanceMotor(100);
+		  avanceMotor(500); // (0-2000)
 		  //HAL_Delay(1);
 
 
