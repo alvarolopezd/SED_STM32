@@ -67,6 +67,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+
 I2C_HandleTypeDef hi2c1;
 
 TIM_HandleTypeDef htim6;
@@ -82,6 +84,7 @@ static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_TIM6_Init(void);
 static void MX_TIM9_Init(void);
+static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -146,6 +149,15 @@ void Display_Temp (float Temp)
 	sprintf (str, "TEMP: %.2f ", Temp);
 	lcd_send_string(str);
 	lcd_send_data('C');
+}
+
+void Display_Pot (int Pot)
+{
+	char str[20] = {0};
+	lcd_put_cur(1, 4);
+
+	sprintf (str, "POT: %d ", Pot);
+	lcd_send_string(str);
 }
 
 /*void Display_Rh (float Rh)
@@ -295,7 +307,7 @@ void pareMotor()
 /************** VARIABLES MODOS **************/
 // MODE 0 AUTOMATICO (PREDETERMIANDO O INICIAL)
 // MODE 1 MANUAL
-volatile int modo=0;
+volatile int modo=1;
 
 /**************** VARIABLES DHT11 Y DS18B20 ************/
 uint8_t Rh_byte1, Rh_byte2, Temp_byte1, Temp_byte2;
@@ -304,6 +316,8 @@ uint16_t SUM, RH, TEMP;
 float Temperature = 0;
 float Humidity = 0;
 uint8_t Presence = 0;
+
+int valPot;
 
 /* USER CODE END 0 */
 
@@ -338,6 +352,7 @@ int main(void)
   MX_I2C1_Init();
   MX_TIM6_Init();
   MX_TIM9_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
 
   // PWM MOTOR
@@ -346,6 +361,9 @@ int main(void)
 
   // RELOJ INTERNO PARA DELAY
   HAL_TIM_Base_Start(&htim6);
+
+  // POTENCIOMETRO
+  //HAL_ADC_Start(&hadc1);
 
   // INICIO DE LCD
    lcd_init();
@@ -413,8 +431,7 @@ int main(void)
 
 		  // PWM MOTOR
 
-		  //__HAL_TIM_SET_COMPARE(&htim9, TIM_CHANNEL_2, 100);
-
+		  /****** MOTOR ********/
 		  avanceMotor(500); // (0-2000)
 		  //HAL_Delay(1);
 
@@ -425,17 +442,27 @@ int main(void)
 		  HAL_GPIO_WritePin(PORT_LED,LED_MANUAL,1); // Enciendo led manual
 		  HAL_GPIO_WritePin(PORT_LED,LED_AUTOM,0);
 
+		  /***** POTENCIOMETRO ******/
+
+		  HAL_Delay(500);
+		  HAL_ADC_Start(&hadc1);
+		  HAL_ADC_PollForConversion(&hadc1, 100);
+		  valPot=HAL_ADC_GetValue(&hadc1);
+
+
+		  /****** PWM MOTOR ******/
+		  pareMotor();
+		  //avanceMotor(0);
+
+
 		  // Imprimir por lcd modo 1
 		  Display_ModoManual();
+		  Display_Pot(valPot);
 
-		  HAL_Delay(1000); //NO ES NECESARIO. Se pone incialmente para visualizar el texto por la lcd
+//		  HAL_Delay(100); //NO ES NECESARIO. Se pone incialmente para visualizar el texto por la lcd
 
-		  lcd_clear ();
+		  //lcd_clear ();
 
-		  //PWM MOTOR
-		  //pareMotor();
-		  avanceMotor(50);
-		  //__HAL_TIM_SET_COMPARE(&htim9, TIM_CHANNEL_2, 0);
 	  }
   }
 
@@ -483,6 +510,56 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.ScanConvMode = DISABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Rank = 1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**
@@ -611,9 +688,9 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */

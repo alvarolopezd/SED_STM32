@@ -64,8 +64,8 @@ void Error_Handler(void);
 #define LED_AUTOM_GPIO_Port GPIOE
 #define LED_MANUAL_Pin GPIO_PIN_4
 #define LED_MANUAL_GPIO_Port GPIOE
-#define MOTOR_PWM_TEMP_Pin GPIO_PIN_6
-#define MOTOR_PWM_TEMP_GPIO_Port GPIOE
+#define MOTOR_PWM_Pin GPIO_PIN_6
+#define MOTOR_PWM_GPIO_Port GPIOE
 #define DATA_DS18B20_Pin GPIO_PIN_11
 #define DATA_DS18B20_GPIO_Port GPIOB
 #define MOTOR_INI1_Pin GPIO_PIN_7
