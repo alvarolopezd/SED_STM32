@@ -264,6 +264,35 @@ int porcentajePot(int valPot)
 	return (((valPot-430)*100)/(4095-430));
 }
 
+/********************** DEBOUNCER************************************/
+
+int debouncer(volatile int* button_int, GPIO_TypeDef* GPIO_port, uint16_t GPIO_number){
+	static uint8_t button_count=0;
+	static int counter=0; // Para ver los tiempos que lleva el programa
+
+	if (*button_int==1){ // Cuando detecta primer flanco
+		if (button_count==0) { // No he contado aun ningun 1
+			counter=HAL_GetTick();
+			button_count++; // Sumo el primer 1 detectado
+		}
+		if (HAL_GetTick()-counter>=20){ // Cada 20 ms miro el valor de entrada
+			counter=HAL_GetTick();
+			if (HAL_GPIO_ReadPin(GPIO_port, GPIO_number)!=1){ // Si recibo una bajada de tension,
+				button_count=1; //reseto el contador de 1 a 1
+			}
+			else{ // si tras esos 20 ms es un 1, lo sumo al contador
+				button_count++;
+			}
+			if (button_count==4){ //Cuando he detectado 4 pulsos que son 1 consecutivos
+				button_count=0; //Entonces reseteo y envio señal de que detecte un 1
+				*button_int=0;
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
 /*********************************************** VARIABLES ******************************************************/
 
 /***************************** VARIABLES MODOS ************************/
@@ -282,6 +311,14 @@ uint8_t Presence = 0;
 /*********************** VARIABLES DHT11 Y DS18B20 ******************/
 int valPot;
 int valPotPorcentaje;
+
+/********************** VARIABLES DEBOUNCER *************************/
+volatile int pulsacion = 0;
+volatile uint32_t contador = 0;
+volatile uint32_t val = 0;
+volatile uint32_t media = 0;
+
+int tiempo_anterior=0;
 
 /* USER CODE END 0 */
 
@@ -342,9 +379,10 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-
-	  if(modo==0) // MODO AUTOMATICO
+	  pulsacion=0;
+	  if((modo==0)&&(debouncer(&pulsacion,PORT_PUSH,PUSH)==0)) // MODO AUTOMATICO
 	  {
+
 		  HAL_GPIO_WritePin(PORT_LED,LED_AUTOM,1); // Enciendo led autom
 		  HAL_GPIO_WritePin(PORT_LED,LED_MANUAL,0);
 
@@ -386,7 +424,7 @@ int main(void)
 
 		  lcd_clear (); // REFRESCAMOS LA LCD
 	  }
-	  else if(modo==1)
+	  else if((modo==1)&&(debouncer(&pulsacion,PORT_PUSH,PUSH)==0))
 	  {
 		  HAL_GPIO_WritePin(PORT_LED,LED_MANUAL,1); // Enciendo led manual
 		  HAL_GPIO_WritePin(PORT_LED,LED_AUTOM,0);
@@ -701,6 +739,9 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 	  if(GPIO_Pin==GPIO_PIN_1)
 	  	{
+		  pulsacion = 1;
+		  val=val+contador;
+		  contador=0;
 		  if(HAL_GPIO_ReadPin(PORT_PUSH,PUSH)&&(modo==0)) 		// Si estoy en modo automatico
 		  {
 			  modo=1; 											// Cambio a modo manual
