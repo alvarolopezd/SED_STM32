@@ -72,8 +72,6 @@ void Error_Handler(void);
 #define MOTOR_INI1_GPIO_Port GPIOC
 #define MOTOR_INI2_Pin GPIO_PIN_9
 #define MOTOR_INI2_GPIO_Port GPIOC
-#define DATA_DHT11_Pin GPIO_PIN_14
-#define DATA_DHT11_GPIO_Port GPIOA
 #define PULSADOR_MODE_Pin GPIO_PIN_1
 #define PULSADOR_MODE_GPIO_Port GPIOD
 #define PULSADOR_MODE_EXTI_IRQn EXTI1_IRQn

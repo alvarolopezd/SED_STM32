@@ -92,6 +92,9 @@ static void MX_ADC1_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+
+/*************************************************** FUNCIONES ******************************************/
+
 /****************** DELAY CON TIM6 Y CLOCK INTERNO ******************/
 
 void delay (uint16_t time)
@@ -151,23 +154,16 @@ void Display_Temp (float Temp)
 	lcd_send_data('C');
 }
 
-void Display_Pot (int Pot)
+void Display_Pot (uint32_t Pot)
 {
 	char str[20] = {0};
 	lcd_put_cur(1, 4);
 
 	sprintf (str, "POT: %d ", Pot);
 	lcd_send_string(str);
+	lcd_send_data('%');
 }
 
-/*void Display_Rh (float Rh)
-{
-	char str[20] = {0};
-	lcd_put_cur(1, 0);
-	sprintf (str, "RH:- %.2f ", Rh);
-	lcd_send_string(str);
-	lcd_send_data('%');
-}*/
 
 /************************ FUNCIONES DS18B20 *******************************/
 
@@ -245,48 +241,6 @@ uint8_t DS18B20_Read (void)
 }
 
 
-/*********************** FUNCIONES DHT11 ************************/
-
-/*void DHT11_Start (void)
-{
-	Set_Pin_Output (DHT11_PORT, DHT11_PIN);  // set the pin as output
-	HAL_GPIO_WritePin (DHT11_PORT, DHT11_PIN, 0);   // pull the pin low
-	delay(18000);   // wait for 18ms
-    HAL_GPIO_WritePin (DHT11_PORT, DHT11_PIN, 1);   // pull the pin high
-	delay(20);   // wait for 20us
-	Set_Pin_Input(DHT11_PORT, DHT11_PIN);    // set as input
-}
-uint8_t DHT11_Check_Response (void)
-{
-	uint8_t Response = 0;
-	delay(40);
-	if (!(HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)))
-	{
-		delay(80);
-		if ((HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN))) Response = 1;
-		else Response = -1; // 255
-	}
-	while ((HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)));   // wait for the pin to go low
-	return Response;
-}
-uint8_t DHT11_Read (void)
-{
-	uint8_t i,j;
-	for (j=0;j<8;j++)
-	{
-		while (!(HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)));   // wait for the pin to go high
-		delay(40);   // wait for 40 us
-		if (!(HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)))   // if the pin is low
-		{
-			i&= ~(1<<(7-j));   // write 0
-		}
-		else i|= (1<<(7-j));  // if the pin is high, write 1
-		while ((HAL_GPIO_ReadPin (DHT11_PORT, DHT11_PIN)));  // wait for the pin to go low
-	}
-	return i;
-}*/
-
-
 /*********************** FUNCIONES DE MOTOR ****************************/
 void avanceMotor(int s)
 {
@@ -304,12 +258,20 @@ void pareMotor()
 	HAL_GPIO_WritePin(MOTOR_PORT, INI1_PIN,GPIO_PIN_RESET);
 }
 
-/************** VARIABLES MODOS **************/
+/*********************** PORCENTAJE DEL MOTOR *****************************/
+int porcentajePot(int valPot)
+{
+	return (((valPot-430)*100)/(4095-430));
+}
+
+/*********************************************** VARIABLES ******************************************************/
+
+/***************************** VARIABLES MODOS ************************/
 // MODE 0 AUTOMATICO (PREDETERMIANDO O INICIAL)
 // MODE 1 MANUAL
-volatile int modo=1;
+volatile int modo=0;
 
-/**************** VARIABLES DHT11 Y DS18B20 ************/
+/*********************** VARIABLES DHT11 Y DS18B20 ******************/
 uint8_t Rh_byte1, Rh_byte2, Temp_byte1, Temp_byte2;
 uint16_t SUM, RH, TEMP;
 
@@ -317,7 +279,9 @@ float Temperature = 0;
 float Humidity = 0;
 uint8_t Presence = 0;
 
+/*********************** VARIABLES DHT11 Y DS18B20 ******************/
 int valPot;
+int valPotPorcentaje;
 
 /* USER CODE END 0 */
 
@@ -325,6 +289,8 @@ int valPot;
   * @brief  The application entry point.
   * @retval int
   */
+
+
 int main(void)
 {
   /* USER CODE BEGIN 1 */
@@ -349,21 +315,17 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_I2C1_Init();
-  MX_TIM6_Init();
-  MX_TIM9_Init();
-  MX_ADC1_Init();
+  MX_I2C1_Init(); // PANTALLA LCD
+  MX_TIM6_Init(); // RELOJ EXTERNO
+  MX_TIM9_Init(); // PWM MOTOR
+  MX_ADC1_Init(); // POTENCIOMETRO
   /* USER CODE BEGIN 2 */
 
   // PWM MOTOR
   HAL_TIM_PWM_Start(&htim9, TIM_CHANNEL_2);
 
-
   // RELOJ INTERNO PARA DELAY
   HAL_TIM_Base_Start(&htim6);
-
-  // POTENCIOMETRO
-  //HAL_ADC_Start(&hadc1);
 
   // INICIO DE LCD
    lcd_init();
@@ -390,7 +352,6 @@ int main(void)
 		  /********* LCD ********/
 		  Display_ModoAutom();
 		  Display_Temp(Temperature);
-		  //Display_Rh(Humidity);
 
 
 		  /********************** DS18B20 ***********************/
@@ -411,57 +372,56 @@ int main(void)
 		  TEMP = (Temp_byte2<<8)|Temp_byte1;
 		  Temperature = (float)TEMP/16;
 
-		  lcd_clear ();
-
-		  /********************** DHT11 *********************/
-		  /*DHT11_Start();
-		  Presence = DHT11_Check_Response();
-		  Rh_byte1 = DHT11_Read ();
-		  Rh_byte2 = DHT11_Read ();
-		  Temp_byte1 = DHT11_Read ();
-		  Temp_byte2 = DHT11_Read ();
-		  SUM = DHT11_Read();
-		  TEMP = Temp_byte1;
-		  RH = Rh_byte1;
-		  Temperature = (float) TEMP;
-		  Humidity = (float) RH;*/
-
-
-		  //HAL_Delay(1000); //NO ES NECESARIO
-
-		  // PWM MOTOR
 
 		  /****** MOTOR ********/
-		  avanceMotor(500); // (0-2000)
-		  //HAL_Delay(1);
+		  if(Temperature<25.0)
+			  pareMotor();
+		  else if((Temperature>=25.0)&&(Temperature<30.0))
+			  avanceMotor(500); // (0-2000)
+		  else if((Temperature>=30.0)&&(Temperature<35.0))
+			  avanceMotor(1000); // (0-2000)
+		  else if(Temperature>=35.0)
+			  avanceMotor(1500); // (0-2000)
 
 
+		  lcd_clear (); // REFRESCAMOS LA LCD
 	  }
 	  else if(modo==1)
 	  {
 		  HAL_GPIO_WritePin(PORT_LED,LED_MANUAL,1); // Enciendo led manual
 		  HAL_GPIO_WritePin(PORT_LED,LED_AUTOM,0);
 
+		  /********* LCD ********/
+		  Display_ModoManual();
+		  Display_Pot(valPotPorcentaje);
+		  HAL_Delay(250);
+
 		  /***** POTENCIOMETRO ******/
 
-		  HAL_Delay(500);
 		  HAL_ADC_Start(&hadc1);
-		  HAL_ADC_PollForConversion(&hadc1, 100);
-		  valPot=HAL_ADC_GetValue(&hadc1);
+		  if(HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY)==HAL_OK)
+		  {
+			  valPot=HAL_ADC_GetValue(&hadc1);
+		  }
+		  valPotPorcentaje=porcentajePot(valPot);
 
 
 		  /****** PWM MOTOR ******/
 		  pareMotor();
-		  //avanceMotor(0);
+
+		  if((valPotPorcentaje>=0)&&(valPotPorcentaje<20))
+			  avanceMotor(200); // (0-2000)
+		  else if((valPotPorcentaje>=20)&&(valPotPorcentaje<40))
+			  avanceMotor(600); // (0-2000)
+		  else if((valPotPorcentaje>=40)&&(valPotPorcentaje<60))
+			  avanceMotor(1000); // (0-2000)
+		  else if((valPotPorcentaje>=60)&&(valPotPorcentaje<80))
+			  avanceMotor(1400); // (0-2000)
+		  else if((valPotPorcentaje>=80)&&(valPotPorcentaje<=100))
+			  avanceMotor(1800); // (0-2000)
 
 
-		  // Imprimir por lcd modo 1
-		  Display_ModoManual();
-		  Display_Pot(valPot);
-
-//		  HAL_Delay(100); //NO ES NECESARIO. Se pone incialmente para visualizar el texto por la lcd
-
-		  //lcd_clear ();
+		  lcd_clear (); // REFRESCAMOS LA LCD
 
 	  }
   }
@@ -532,9 +492,9 @@ static void MX_ADC1_Init(void)
   /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
   */
   hadc1.Instance = ADC1;
-  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV2;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
-  hadc1.Init.ScanConvMode = DISABLE;
+  hadc1.Init.ScanConvMode = ENABLE;
   hadc1.Init.ContinuousConvMode = ENABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
@@ -551,7 +511,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_1;
   sConfig.Rank = 1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  sConfig.SamplingTime = ADC_SAMPLETIME_144CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -702,9 +662,6 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, MOTOR_INI1_Pin|MOTOR_INI2_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(DATA_DHT11_GPIO_Port, DATA_DHT11_Pin, GPIO_PIN_RESET);
-
   /*Configure GPIO pins : LED_AUTOM_Pin LED_MANUAL_Pin */
   GPIO_InitStruct.Pin = LED_AUTOM_Pin|LED_MANUAL_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -725,13 +682,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : DATA_DHT11_Pin */
-  GPIO_InitStruct.Pin = DATA_DHT11_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(DATA_DHT11_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PULSADOR_MODE_Pin */
   GPIO_InitStruct.Pin = PULSADOR_MODE_Pin;
